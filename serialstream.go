@@ -7,7 +7,7 @@ import (
 )
 
 const maxSerialFrameLength = 80 // Max. frame length according to Hamlib.
-const serialRxSeqBufLength = 80 * time.Millisecond
+const serialRxSeqBufLength = 60 * time.Millisecond
 
 type serialStream struct {
 	common streamCommon
