@@ -53,32 +53,19 @@ host **ic-705** (ic-705.local or ic-705.localdomain).
 After it is connected and logged in:
 
 - Creates a virtual PulseAudio **sound card** (48kHz, s16le, mono). This can be
-  used to record/play audio from/to the server (the radio). You can also set
-  this sound card in [WSJT-X](https://physics.princeton.edu/pulsar/K1JT/wsjtx.html).
-
-  If you want to listen to the audio coming from this sound card in real time,
-  then you can create a [PulseAudio loopback](https://github.com/alentoghostflame/Python-Pulseaudio-Loopback-Tool)
-  between the kappanhang sound card and your real sound card. You can also
-  create a loopback for your microphone using this tool, so you'll be able to
-  transmit your voice.
+  used to record/play audio from/to the server (the transceiver). You can also
+  set this sound card in [WSJT-X](https://physics.princeton.edu/pulsar/K1JT/wsjtx.html).
 - Starts a **TCP server** on port `4533` for exposing the **serial port**.
+- Starts `rigctld` and connects it to kappanhang's TCP serial port server.
   This can be used for controlling the server (the transceiver) with
   [Hamlib](https://hamlib.github.io/) (`rigctld`).
-- Runs the command `rigctld -m 3085 -r :4533` which starts `rigctld` and
-  connects it to kappanhang's TCP serial port server. You can specify a custom
-  command with the `-r` command line argument. Running any command can be
-  disabled with `-r -`. The command is only executed once, as the TCP serial
-  port server will stay on even if the RS-BA1 server disconnects. If the TCP
-  serial port client disconnects (rigctld hangs) then the command will be
-  automatically restarted. This can be disabled with the `-e`.
-
-  3085 is the model number of the Icom IC-705. `rigctld` will connect to
-  kappanhang's TCP serial port server, and waits connections on it's default
-  TCP port `4532`.
 
   To use this with for example [WSJT-X](https://physics.princeton.edu/pulsar/K1JT/wsjtx.html),
-  open WSJT-X settings, go to the *Radio* tab, set the *rig type* to `Hamlib NET
-  rigctl`, and the *Network server* to `localhost`.
+  open WSJT-X settings, go to the *Radio* tab, set the *rig type* to `Hamlib
+  NET rigctl`, and the *Network server* to `localhost`. It is recommended to
+  set the *poll interval* to 10 seconds.
+
+### Virtual serial port
 
 If the `-s` command line argument is specified, then kappanhang will create a
 **virtual serial port**, so other apps which don't support Hamlib can access
@@ -93,7 +80,87 @@ I use this command to link a COM port in a Windows OS running in VMware to
 the virtual serial port, so I can use the original RS-BA1 software remote
 control GUI.
 
-### Icom IC-705 Wi-Fi notes
+### Status bar
+
+kappanhang displays a "realtime" status bar (when the audio/serial connection
+is up) with the following info:
+
+- First status bar line:
+  - `S meter`: periodically refreshed S meter value, OVF is displayed on
+    overflow
+  - `rfg`: RF gain in percent
+  - `sql`: squelch level in percent
+  - `nr`: noise reduction level in percent
+  - `audio`: current status of the audio monitor (see the *Hotkeys* section
+    in this README for more information about this feature)
+
+- Second status bar line:
+  - `state`: RX/TX/TUNE depending on the PTT status
+  - `freq`: operating frequency in MHz
+  - `ts`: tuning step
+  - `mode`: LSB/USB/FM etc.
+  - `filter`: active filter (FIL1, FIL2 etc.)
+  - `preamp`: PAMP0 means the preamp is off
+  - `voltage`: Vd voltage, updated when a TX/TUNE is over
+  - `txpwr`: current transmit power setting in percent
+  - `swr`: reported SWR
+
+- Third status bar line:
+  - `up`: how long the audio/serial connection is active
+  - `rtt`: roundtrip communication latency with the server
+  - `up/down`: currently used upload/download bandwidth (only considering UDP
+    payload to/from the server)
+  - `retx`: audio/serial retransmit request count to/from the server
+  - `lost`: lost audio/serial packet count from the server
+
+Data for the first 2 status bar lines are acquired by monitoring CiV traffic
+in the serial stream. S value and OVF are queried periodically, but these
+queries/replies are filtered from the serial data stream sent to the TCP
+serial port server and to the virtual serial port.
+
+`retx` and `lost` are displayed in a 1 minute window, which means they will be
+reset to 0 if they don't increase for 1 minute. A `retx` value other than 0
+indicates issues with the connection (probably a poor Wi-Fi connection), but
+if `loss` stays 0 then the issues were fixed using packet retransmission.
+`loss` indicates failed retransmit sequences, so packet loss. This can cause
+audio and serial communication disruptions.
+
+If status bar interval (can be changed with the `-i` command line
+argument) is equal to or above 1 second, then the realtime status bar will be
+disabled and the contents of the last line of the status bar will be written
+as new console log lines. This is also the case if a Unix/VT100 terminal is
+not available.
+
+### Hotkeys
+
+- `q` (quit): closes the app
+- `l` (listen): toggles audio stream playback to the default sound device.
+  This is useful for quickly listening into the audio stream coming from the
+  server (the transceiver).
+- `space`: toggles PTT and audio stream recording from the default sound
+  device. You can transmit your own voice using a mic attached to your
+  computer for example.
+
+Some basic CAT control hotkeys are also supported:
+
+- `t`: toggles the tune process
+- `+`: increases TX power
+- `-`: decreases TX power
+- `0` to `9`: set TX power in 10% steps
+- `)`: set TX power to 100%
+- `[`, `]`: decreases, increases frequency
+- `{`, `}`: decreases, increases tuning step
+- `;`, `'`: decreases, increases RF gain
+- `:`, `"`: decreases, increases squelch level
+- `,`, `.`: decreases, increases noise reduction level
+- `/`: toggles noise reduction
+- `n`, `m`: cycles through operating modes
+- `d`, `f`: cycles through filters
+- `D`: toggles data mode
+- `v`, `b`: cycles through bands
+- `p`: toggles preamp
+
+## Icom IC-705 Wi-Fi notes
 
 Note that the built-in Wi-Fi in the Icom IC-705 has **very limited range**,
 and **sensitive to interference**. If you see a lot of retransmits in the log,
@@ -108,74 +175,6 @@ should be used (see explanation [here](https://www.metageek.com/training/resourc
 
 Sometimes rebooting the transceiver helps, as the network stack in the IC-705
 is not quite free of bugs. :)
-
-### Status bar
-
-kappanhang displays a "realtime" status bar (when the audio/serial connection
-is up) with the following info:
-
-- First status bar line:
-  - `state`: RX/TX/TUNE depending on the PTT status
-  - `freq`: operating frequency in MHz, mode (LSB/USB/FM...), active filter
-  - `txpwr`: current transmit power setting in percent
-  - `audiomon`: current status of the audio monitor (see the *Hotkeys* section
-    in this README for more information about this feature)
-
-- Second status bar line:
-  - `up`: how long the audio/serial connection is active
-  - `rtt`: roundtrip communication latency with the server
-  - `up/down`: currently used upload/download bandwidth (only considering UDP
-    payload to/from the server)
-  - `retx`: audio/serial retransmit request count to/from the server
-  - `lost`: lost audio/serial packet count from the server
-
-Data for the first status bar line is acquired by monitoring CiV traffic in
-the serial stream.
-
-`retx` and `lost` are displayed in a 1 minute window, which means they will be
-reset to 0 if they don't increase for 1 minute. A `retx` value other than 0
-indicates issues with the connection (probably a poor Wi-Fi connection), but
-if `loss` stays 0 then the issues were fixed using packet retransmission.
-`loss` indicates failed retransmit sequences, so packet loss. This can cause
-audio and serial communication disruptions.
-
-If status bar interval (can be changed with the `-i` command line
-argument) is equal to or above 1 second, then the realtime status bar will be
-disabled and the contents of the second line of the status bar will be written
-as new console log lines. This is also the case if a Unix/VT100 terminal is
-not available.
-
-### Hotkeys
-
-- `q` (quit): closes the app
-- `l` (listen): toggles audio stream playback to the default sound device
-
-  This is useful for quickly listening into the audio stream coming from the
-  server (the transceiver).
-
-  Note that audio will be played to the previously created virtual sound card
-  regardless of this setting.
-- `space`: toggles PTT and audio stream recording from the default sound
-  device
-
-  You can transmit your own voice using a mic attached to your computer for
-  example.
-
-Some basic CAT control hotkeys are also supported:
-
-- `t`: toggles the tune process
-- `+`: increases TX power
-- `-`: decreases TX power
-- `<`, `>`: decreases, increases frequency 1Hz
-- `,`, `.`: decreases, increases frequency 10Hz
-- `:`, `"`: decreases, increases frequency 100Hz
-- `;`, `'`: decreases, increases frequency 1kHz
-- `{`, `}`: decreases, increases frequency 10kHz
-- `[`, `]`: decreases, increases frequency 100kHz
-- `n`, `m`: cycles through operating modes
-- `d`, `f`: cycles through filters
-- `D`: toggles data mode
-- `v`, `b`: cycles through bands
 
 ## Authors
 
