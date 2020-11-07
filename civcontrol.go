@@ -9,6 +9,8 @@ import (
 const civAddress = 0xa4
 const sReadInterval = time.Second
 
+// Commands reference: https://www.icomeurope.com/wp-content/uploads/2020/08/IC-705_ENG_CI-V_1_20200721.pdf
+
 type civOperatingMode struct {
 	name string
 	code byte
@@ -78,6 +80,10 @@ type civControlStruct struct {
 		getTransmitStatusSent bool
 		getVdSent             bool
 
+		lastSReceivedAt   time.Time
+		lastOVFReceivedAt time.Time
+		lastSWRReceivedAt time.Time
+
 		setPwrSent       bool
 		setRFGainSent    bool
 		setSQLSent       bool
@@ -88,6 +94,7 @@ type civControlStruct struct {
 		setTuneSent      bool
 		setDataModeSent  bool
 		setPreampSent    bool
+		setAGCSent       bool
 		setNREnabledSent bool
 		setTSSent        bool
 
@@ -105,6 +112,7 @@ type civControlStruct struct {
 		bandIdx          int
 		bandChanging     bool
 		preamp           int
+		agc              int
 		tsValue          byte
 		ts               uint
 	}
@@ -144,7 +152,7 @@ func (s *civControlStruct) decode(d []byte) bool {
 	case 0x15:
 		return s.decodeVdSWRS(payload)
 	case 0x16:
-		return s.decodePreampAndNR(payload)
+		return s.decodePreampAGCNR(payload)
 	}
 	return true
 }
@@ -311,6 +319,7 @@ func (s *civControlStruct) decodeDataModeAndOVF(d []byte) bool {
 		} else {
 			statusLog.reportOVF(false)
 		}
+		s.state.lastOVFReceivedAt = time.Now()
 		if s.state.getOVFSent {
 			s.state.getOVFSent = false
 			return false
@@ -453,6 +462,7 @@ func (s *civControlStruct) decodeVdSWRS(d []byte) bool {
 				sStr += "60"
 			}
 		}
+		s.state.lastSReceivedAt = time.Now()
 		statusLog.reportS(sStr)
 		if s.state.getSSent {
 			s.state.getSSent = false
@@ -462,6 +472,7 @@ func (s *civControlStruct) decodeVdSWRS(d []byte) bool {
 		if len(d) < 3 {
 			return !s.state.getSWRSent
 		}
+		s.state.lastSWRReceivedAt = time.Now()
 		statusLog.reportSWR(((float64(int(d[1])<<8)+float64(d[2]))/0x0120)*2 + 1)
 		if s.state.getSWRSent {
 			s.state.getSWRSent = false
@@ -480,7 +491,7 @@ func (s *civControlStruct) decodeVdSWRS(d []byte) bool {
 	return true
 }
 
-func (s *civControlStruct) decodePreampAndNR(d []byte) bool {
+func (s *civControlStruct) decodePreampAGCNR(d []byte) bool {
 	switch d[0] {
 	case 0x02:
 		if len(d) < 2 {
@@ -490,6 +501,25 @@ func (s *civControlStruct) decodePreampAndNR(d []byte) bool {
 		statusLog.reportPreamp(s.state.preamp)
 		if s.state.setPreampSent {
 			s.state.setPreampSent = false
+			return false
+		}
+	case 0x12:
+		if len(d) < 2 {
+			return !s.state.setAGCSent
+		}
+		s.state.agc = int(d[1])
+		var agc string
+		switch s.state.agc {
+		case 1:
+			agc = "F"
+		case 2:
+			agc = "M"
+		case 3:
+			agc = "S"
+		}
+		statusLog.reportAGC(agc)
+		if s.state.setAGCSent {
+			s.state.setAGCSent = false
 			return false
 		}
 	case 0x40:
@@ -571,6 +601,11 @@ func (s *civControlStruct) decSQL() error {
 }
 
 func (s *civControlStruct) setNR(percent int) error {
+	if !s.state.nrEnabled {
+		if err := s.toggleNR(); err != nil {
+			return err
+		}
+	}
 	s.state.setNRSent = true
 	v := uint16(0x0255 * (float64(percent) / 100))
 	return s.st.send([]byte{254, 254, civAddress, 224, 0x14, 0x06, byte(v >> 8), byte(v & 0xff), 253})
@@ -745,6 +780,15 @@ func (s *civControlStruct) togglePreamp() error {
 	return s.st.send([]byte{254, 254, civAddress, 224, 0x16, 0x02, b, 253})
 }
 
+func (s *civControlStruct) toggleAGC() error {
+	s.state.setAGCSent = true
+	b := byte(s.state.agc + 1)
+	if b > 3 {
+		b = 1
+	}
+	return s.st.send([]byte{254, 254, civAddress, 224, 0x16, 0x12, b, 253})
+}
+
 func (s *civControlStruct) toggleNR() error {
 	s.state.setNRSent = true
 	var b byte
@@ -846,9 +890,15 @@ func (s *civControlStruct) loop() {
 			s.deinitFinished <- true
 			return
 		case <-time.After(sReadInterval):
-			_ = s.getS()
-			_ = s.getOVF()
-			_ = s.getSWR()
+			if time.Since(s.state.lastSReceivedAt) >= sReadInterval {
+				_ = s.getS()
+			}
+			if time.Since(s.state.lastOVFReceivedAt) >= sReadInterval {
+				_ = s.getOVF()
+			}
+			if time.Since(s.state.lastSWRReceivedAt) >= sReadInterval && (s.state.ptt || s.state.tune) {
+				_ = s.getSWR()
+			}
 		case <-s.resetSReadTimer:
 		}
 	}
@@ -875,6 +925,10 @@ func (s *civControlStruct) init(st *serialStream) error {
 	}
 	// Querying preamp.
 	if err := s.st.send([]byte{254, 254, civAddress, 224, 0x16, 0x02, 253}); err != nil {
+		return err
+	}
+	// Querying AGC.
+	if err := s.st.send([]byte{254, 254, civAddress, 224, 0x16, 0x12, 253}); err != nil {
 		return err
 	}
 	if err := s.getVd(); err != nil {

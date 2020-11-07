@@ -28,9 +28,6 @@ go install https://github.com/nonoo/kappanhang
 - Make sure network settings (on the Icom IC-705 in: `Menu -> Set ->
   WLAN set -> Remote settings`) are the following:
   - **Network control** is turned on.
-  - **Network user 1** username is `beer` and the password is `beerbeer`.
-    These are fixed as the password encoding of the RS-BA1 protocol has not
-    been decrypted yet. See [passcode.txt](passcode.txt) for more information.
   - **UDP ports** are on their default values:
     - Control port: `50001`
     - Serial port: `50002`
@@ -48,7 +45,9 @@ You can get the available command line parameters with the `-h` command line
 argument.
 
 If no command line arguments are set, then the app will try to connect to the
-host **ic-705** (ic-705.local or ic-705.localdomain).
+host **ic-705** (ic-705.local or ic-705.localdomain) with the username `beer`
+and password `beerbeer`. You can set the username with the `-u` and the
+password with the `-p` command line arguments.
 
 After it is connected and logged in:
 
@@ -86,24 +85,25 @@ kappanhang displays a "realtime" status bar (when the audio/serial connection
 is up) with the following info:
 
 - First status bar line:
-  - `S meter`: periodically refreshed S meter value, OVF is displayed on
-    overflow
+  - `MON/REC`: current status of the audio monitor (see the *Hotkeys* section
+    in this README for more information about this feature)
+  - `filter`: active filter (FIL1, FIL2 etc.)
+  - `preamp`: PAMP0 means the preamp is off
+  - `AGC`: AGC state (F - fast, M - middle, S - slow)
   - `rfg`: RF gain in percent
   - `sql`: squelch level in percent
   - `nr`: noise reduction level in percent
-  - `audio`: current status of the audio monitor (see the *Hotkeys* section
-    in this README for more information about this feature)
 
 - Second status bar line:
-  - `state`: RX/TX/TUNE depending on the PTT status
+  - `S meter`: periodically refreshed S meter value, OVF is displayed on
+    overflow, displays TX on transmit (or TUNE)
   - `freq`: operating frequency in MHz
-  - `ts`: tuning step
+  - `TS`: tuning step
   - `mode`: LSB/USB/FM etc.
-  - `filter`: active filter (FIL1, FIL2 etc.)
-  - `preamp`: PAMP0 means the preamp is off
-  - `voltage`: Vd voltage, updated when a TX/TUNE is over
+  - `voltage`: drain voltage of the final amplifier MOS-FETs, updated when a
+    TX/TUNE is over
   - `txpwr`: current transmit power setting in percent
-  - `swr`: reported SWR
+  - `swr`: reported SWR (only displayed during TX)
 
 - Third status bar line:
   - `up`: how long the audio/serial connection is active
@@ -159,6 +159,7 @@ Some basic CAT control hotkeys are also supported:
 - `D`: toggles data mode
 - `v`, `b`: cycles through bands
 - `p`: toggles preamp
+- `a`: toggles AGC
 
 ## Icom IC-705 Wi-Fi notes
 
@@ -176,10 +177,11 @@ should be used (see explanation [here](https://www.metageek.com/training/resourc
 Sometimes rebooting the transceiver helps, as the network stack in the IC-705
 is not quite free of bugs. :)
 
-## Authors
+## Contributors
 
 - Norbert Varga HA2NON [nonoo@nonoo.hu](mailto:nonoo@nonoo.hu)
 - Akos Marton ES1AKOS
+- W6EL (passcode algorithm)
 
 ## Donations
 
