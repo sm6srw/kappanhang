@@ -54,15 +54,16 @@ After it is connected and logged in:
 - Creates a virtual PulseAudio **sound card** (48kHz, s16le, mono). This can be
   used to record/play audio from/to the server (the transceiver). You can also
   set this sound card in [WSJT-X](https://physics.princeton.edu/pulsar/K1JT/wsjtx.html).
-- Starts a **TCP server** on port `4533` for exposing the **serial port**.
-- Starts `rigctld` and connects it to kappanhang's TCP serial port server.
-  This can be used for controlling the server (the transceiver) with
-  [Hamlib](https://hamlib.github.io/) (`rigctld`).
+- Starts an **internal rigctld** server. This can be used for controlling the
+  server (the transceiver) with [Hamlib](https://hamlib.github.io/) (`rigctl`)
+  clients. This internal rigctld is needed for more reliable rigctl
+  communication, as the original rigctld is very sensitive to timeouts.
 
   To use this with for example [WSJT-X](https://physics.princeton.edu/pulsar/K1JT/wsjtx.html),
   open WSJT-X settings, go to the *Radio* tab, set the *rig type* to `Hamlib
-  NET rigctl`, and the *Network server* to `localhost`. It is recommended to
-  set the *poll interval* to 10 seconds.
+  NET rigctl`, and the *Network server* to `localhost`.
+- Starts a **TCP server** on port `4533` for exposing the **serial port**.
+  This can be used for an externally launched `rigctld` for example.
 
 ### Virtual serial port
 
@@ -99,7 +100,9 @@ is up) with the following info:
     overflow, displays TX on transmit (or TUNE)
   - `freq`: operating frequency in MHz
   - `TS`: tuning step
-  - `mode`: LSB/USB/FM etc.
+  - `mode`: LSB/USB/FM etc. *-D* indicates data mode
+  - `SPLIT/DUP-/DUP+`: displayed when split/DUP operation is active, the TX
+    frequency is also displayed in split mode
   - `voltage`: drain voltage of the final amplifier MOS-FETs, updated when a
     TX/TUNE is over
   - `txpwr`: current transmit power setting in percent
@@ -151,6 +154,7 @@ Some basic CAT control hotkeys are also supported:
 - `[`, `]`: decreases, increases frequency
 - `{`, `}`: decreases, increases tuning step
 - `;`, `'`: decreases, increases RF gain
+- `!` to `(` (shift + numbers): set RF gain in 10% steps
 - `:`, `"`: decreases, increases squelch level
 - `,`, `.`: decreases, increases noise reduction level
 - `/`: toggles noise reduction
@@ -160,6 +164,8 @@ Some basic CAT control hotkeys are also supported:
 - `v`, `b`: cycles through bands
 - `p`: toggles preamp
 - `a`: toggles AGC
+- `o`: toggles VFO A/B
+- `s`: toggles split/DUP+- operation
 
 ## Icom IC-705 Wi-Fi notes
 

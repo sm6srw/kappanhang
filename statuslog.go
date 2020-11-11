@@ -15,24 +15,30 @@ type statusLogData struct {
 	line2 string
 	line3 string
 
-	ptt       bool
-	tune      bool
-	frequency uint
-	mode      string
-	dataMode  string
-	filter    string
-	preamp    string
-	agc       string
-	vd        string
-	txPower   string
-	rfGain    string
-	sql       string
-	nr        string
-	nrEnabled bool
-	s         string
-	ovf       bool
-	swr       string
-	ts        string
+	ptt          bool
+	tune         bool
+	frequency    uint
+	subFrequency uint
+	mode         string
+	dataMode     string
+	filter       string
+	subMode      string
+	subDataMode  string
+	subFilter    string
+	preamp       string
+	agc          string
+	vd           string
+	txPower      string
+	rfGain       string
+	sql          string
+	nr           string
+	nrEnabled    bool
+	s            string
+	ovf          bool
+	swr          string
+	ts           string
+	split        string
+	splitMode    splitMode
 
 	startTime time.Time
 	rttStr    string
@@ -52,6 +58,7 @@ type statusLogStruct struct {
 		rxColor          *color.Color
 		retransmitsColor *color.Color
 		lostColor        *color.Color
+		splitColor       *color.Color
 
 		stateStr struct {
 			tx   string
@@ -123,7 +130,17 @@ func (s *statusLogStruct) reportFrequency(f uint) {
 	s.data.frequency = f
 }
 
-func (s *statusLogStruct) reportMode(mode, filter string) {
+func (s *statusLogStruct) reportSubFrequency(f uint) {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	if s.data == nil {
+		return
+	}
+	s.data.subFrequency = f
+}
+
+func (s *statusLogStruct) reportMode(mode string, dataMode bool, filter string) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
@@ -131,20 +148,28 @@ func (s *statusLogStruct) reportMode(mode, filter string) {
 		return
 	}
 	s.data.mode = mode
+	if dataMode {
+		s.data.dataMode = "-D"
+	} else {
+		s.data.dataMode = ""
+	}
 	s.data.filter = filter
 }
 
-func (s *statusLogStruct) reportDataMode(dataMode, filter string) {
+func (s *statusLogStruct) reportSubMode(mode string, dataMode bool, filter string) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
 	if s.data == nil {
 		return
 	}
-	s.data.dataMode = dataMode
-	if dataMode != "" {
-		s.data.filter = filter
+	s.data.subMode = mode
+	if dataMode {
+		s.data.subDataMode = "-D"
+	} else {
+		s.data.subDataMode = ""
 	}
+	s.data.subFilter = filter
 }
 
 func (s *statusLogStruct) reportPreamp(preamp int) {
@@ -289,6 +314,21 @@ func (s *statusLogStruct) reportNR(percent int) {
 	s.data.nr = fmt.Sprint(percent, "%")
 }
 
+func (s *statusLogStruct) reportSplit(mode splitMode, split string) {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	if s.data == nil {
+		return
+	}
+	s.data.splitMode = mode
+	if split == "" {
+		s.data.split = ""
+	} else {
+		s.data.split = s.preGenerated.splitColor.Sprint(split)
+	}
+}
+
 func (s *statusLogStruct) clearInternal() {
 	fmt.Printf("%c[2K", 27)
 }
@@ -399,12 +439,20 @@ func (s *statusLogStruct) update() {
 	if s.data.txPower != "" {
 		txPowerStr = " txpwr " + s.data.txPower
 	}
+	var splitStr string
+	if s.data.split != "" {
+		splitStr = " " + s.data.split
+		if s.data.splitMode == splitModeOn {
+			splitStr += fmt.Sprintf("/%.6f/%s%s/%s", float64(s.data.subFrequency)/1000000,
+				s.data.subMode, s.data.subDataMode, s.data.subFilter)
+		}
+	}
 	var swrStr string
 	if (s.data.tune || s.data.ptt) && s.data.swr != "" {
 		swrStr = " SWR" + s.data.swr
 	}
 	s.data.line2 = fmt.Sprint(stateStr, " ", fmt.Sprintf("%.6f", float64(s.data.frequency)/1000000),
-		tsStr, modeStr, vdStr, txPowerStr, swrStr)
+		tsStr, modeStr, splitStr, vdStr, txPowerStr, swrStr)
 
 	up, down, lost, retransmits := netstat.get()
 	lostStr := "0"
@@ -530,4 +578,6 @@ func (s *statusLogStruct) initIfNeeded() {
 	s.preGenerated.retransmitsColor.Add(color.BgYellow)
 	s.preGenerated.lostColor = color.New(color.FgHiWhite)
 	s.preGenerated.lostColor.Add(color.BgRed)
+
+	s.preGenerated.splitColor = color.New(color.FgHiMagenta)
 }

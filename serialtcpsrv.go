@@ -90,7 +90,17 @@ func (s *serialTCPSrvStruct) clientLoop() {
 	writeErrChan := make(chan error)
 	go s.writeLoop(writeLoopDeinitNeededChan, writeLoopDeinitFinishedChan, writeErrChan)
 
-connected:
+	defer func() {
+		s.client.Close()
+		log.Print("client ", s.client.RemoteAddr().String(), " disconnected")
+
+		writeLoopDeinitNeededChan <- true
+		<-writeLoopDeinitFinishedChan
+
+		<-s.clientLoopDeinitNeededChan
+		s.clientLoopDeinitFinishedChan <- true
+	}()
+
 	for {
 		b := make([]byte, maxSerialFrameLength)
 		n, err := s.client.Read(b)
@@ -101,7 +111,7 @@ connected:
 		select {
 		case s.fromClient <- b[:n]:
 		case <-writeErrChan:
-			break connected
+			return
 		case <-s.clientLoopDeinitNeededChan:
 			writeLoopDeinitNeededChan <- true
 			<-writeLoopDeinitFinishedChan
@@ -110,11 +120,6 @@ connected:
 			return
 		}
 	}
-
-	log.Print("client ", s.client.RemoteAddr().String(), " disconnected")
-
-	writeLoopDeinitNeededChan <- true
-	<-writeLoopDeinitFinishedChan
 }
 
 func (s *serialTCPSrvStruct) loop() {
@@ -123,6 +128,9 @@ func (s *serialTCPSrvStruct) loop() {
 
 		s.disconnectClient()
 		s.deinitClient()
+
+		s.clientLoopDeinitNeededChan = make(chan bool)
+		s.clientLoopDeinitFinishedChan = make(chan bool)
 
 		if err != nil {
 			if err != io.EOF {
